@@ -160,6 +160,8 @@ demand_SS=m.addVars(S,Z, name = "demand_SS")
 #Services.index(S_i[i][y])
 
 #Frequency
+#Attempting to set flow constraints for freq_I and freq_S
+
 m.addConstrs((freq_I[i,t]==freq_S[Services.index(S_i[i][y]),t] for i,t,y in itertools.product(W,T,Y)),"freqc")
 m.addConstrs((freq_I[i,t]==freq_S[Services.index(S_i[i]),t] for i,t in itertools.product(V,T)),"freqc")
 
@@ -181,8 +183,9 @@ m.addConstrs((actual_SS[s,z,t] == actual_S.sum(s,'*',z) for s,z,t in itertools.p
 
 
 #Revenue
-#m.addConstrs((revenue_I[i,z,t]==price_HSR[i,z]*actual_I[i,z,t]*freq_I[i,t] for i,z,t in itertools.product(I,Z,T)),"rev")
-#m.addConstrs((revenue_S[s,z,t]==actual_SS[s,z,t]*freq_S[s,t] for s,z,t in itertools.product(S,Z,T)),"rev")
+#These equations are where the quadratic error comes from
+m.addConstrs((revenue_I[i,z,t]==price_HSR[i,z]*actual_I[i,z,t]*freq_I[i,t] for i,z,t in itertools.product(I,Z,T)),"rev")
+m.addConstrs((revenue_S[s,z,t]==actual_SS[s,z,t]*freq_S[s,t] for s,z,t in itertools.product(S,Z,T)),"rev")
 
 
 obj = sum(revenue_I[i,z,t]-cost_HSR[s] for i,z,t,s in itertools.product(I,Z,T,S))
@@ -196,8 +199,8 @@ m.optimize()
 #Print
 z = 0
 t = 0
-for s in S:
-    print(freq_S[s,t].x)
+for i in I:
+    print(revenue_I[i,z,t].x)
 
 
 
