@@ -14,8 +14,6 @@ from IPython import get_ipython
 import itertools
 import tkinter as tk
 from itertools import permutations
-import networkx as nx 
-
 
 get_ipython().magic('reset -sf')
 
@@ -30,18 +28,15 @@ total_passengers=pd.read_excel('TotalP.xlsx')
 total_passengers=np.array(total_passengers)
 
 #Parameters
-cities = ['New York',	'Boston',	'Philadelphia',	'Providence',	'D.C.']
+cities = ['New York',	'Boston',	'Philadelphia',	'Providence',	'D.C.', 'Baltimore', 'Portland']
 p_types = ['child', 'adult', 'senior']
 periods = ['6-10','10-2','2-6','6-10']
 v1 = 2 #value of price in demand 
 v2= 1 #value of time in demand
 
-spill = 100
 recap_rate = 0.5
-splitA = 0.4
-splitB = 0.6
-spillA = 200
-spillB = 200 
+splitA = 0.5
+splitB = 0.5
 
 
 #Itineraries
@@ -134,8 +129,10 @@ T = range(len(periods))
 S = range(len(Services))
 X = range(len(I_s[0]))
 Y = range(2)
-V = range(0,20)
-W = range(20,80)    
+V = range(0,len(Itineraries2))
+W = range(len(Itineraries2),len(Itineraries))    
+T2 = range(1,3)
+
 
 #Demand
 demand=np.empty((len(I),len(Z)))
@@ -159,37 +156,15 @@ for s in S:
             summ = summ + demand_S[s,x,z]
         demand_SS[s,z] = summ
     
-#Actual
-intend_I=np.zeros((len(I),len(Z),len(T)))
-for i in I:
-    for z in Z:
-        for t in T:
-            intend_I[i,z,t] = demand[i,z]*total_passengers_I[i]
 
-
-intend_S=np.zeros((len(S),len(X),len(Z),len(T)))
-for s in S:
-    for z in Z:
-        for t in T:
-            for x in X:
-                intend_S[s,x,z,t] = demand_S[s,x,z]*total_passengers_I[Itineraries.index(I_s[s][x])]-spill+recap_rate*(splitA*spillA+splitB*spillB)
-
-intend_SS = np.zeros((len(S),len(Z),len(T)))
-for s in S:
-    for z in Z:
-        for t in T:
-            summ = 0
-            for x in X:
-                summ = summ + intend_S[s,x,z,t]
-            intend_SS[s,z,t]=summ
-        
 service_capacity = np.zeros(len(Itineraries))
 for x in range(len(Itineraries)):
-    service_capacity[x]=5000
+    service_capacity[x]=250
     
 cost_HSR = np.zeros(len(Services))
 for x in range(len(Services)):
-    cost_HSR[x] = Itineraries_dist[x]*410
+    cost_HSR[x] = Itineraries_dist[x]
+    
 
 # #Optimization
 
@@ -201,8 +176,8 @@ T = range(len(periods))
 S = range(len(Services))
 X = range(len(I_s[0]))
 Y = range(2)
-V = range(0,20)
-W = range(20,80)  
+V = range(0,len(Itineraries2))
+W = range(len(Itineraries2),len(Itineraries))  
 
 freq_I = m.addVars(I,T, vtype=GRB.INTEGER,name="freq_I")
 freq_S = m.addVars(S,T, vtype=GRB.INTEGER,name="freq_S")
@@ -212,7 +187,9 @@ revenue_S = m.addVars(S,Z,T, name="revenue_S")
 taking_I = m.addVars(I,Z,T, vtype=GRB.INTEGER, name = "taking_I")
 taking_S = m.addVars(S,Z,T, vtype=GRB.INTEGER, name = "taking_S")
 spilled_I = m.addVars(I,Z,T, vtype= GRB.INTEGER, name = "spilled_I")
-
+intend_I = m.addVars(I,Z,T, vtype= GRB.INTEGER, name ="intend_I")
+intend_S = m.addVars(S,X,Z,T, vtype= GRB.INTEGER, name = "intend_S")
+intend_SS = m.addVars(S,Z,T, vtype= GRB.INTEGER, name = "intend_SS")
 
 
 #Frequency
@@ -222,12 +199,20 @@ m.addConstrs(freq_S[s,t] <= 100 for s,t in itertools.product(S,T))
 for s in S:
         m.addConstrs(freq_S[s,t] >= freq_I[Itineraries.index(i),t] for i,t in itertools.product(I_s[s],T))
 
+#Actual
+m.addConstrs(intend_I[i,z,0] <= demand[i,z]*total_passengers_I[i]-spilled_I[i,z,0]+recap_rate*(splitA*spilled_I[i,z,1]) for i,z in itertools.product(I,Z))
+m.addConstrs(intend_I[i,z,t] <= demand[i,z]*total_passengers_I[i]-spilled_I[i,z,t]+recap_rate*(splitA*spilled_I[i,z,t-1]+splitB*spilled_I[i,z,t+1]) for i,z,t in itertools.product(I,Z,T2))
+m.addConstrs(intend_I[i,z,3] <= demand[i,z]*total_passengers_I[i]-spilled_I[i,z,3]+recap_rate*(splitA*spilled_I[i,z,2]) for i,z in itertools.product(I,Z))
+
+#m.addConstrs(intend_S[s,x,z,t] <= demand_S[s,x,z]*total_passengers_I[Itineraries.index(I_s[s][x])] for s,x,z,t in itertools.product(S,X,Z,T))
+#m.addConstrs(intend_SS[s,z,t] <= intend_S.sum(s,'*',z,t) for s,z,t in itertools.product(S,Z,T))
+
 
 # Taking
 m.addConstrs(taking_I[i,z,t] <= intend_I[i,z,t] for i,z,t in itertools.product(I,Z,T))
 m.addConstrs(taking_I[i,z,t] <= service_capacity[0]*freq_I[i,t] for i,z,t in itertools.product(I,Z,T))
-m.addConstrs(taking_S[s,z,t] <= intend_SS[s,z,t] for s,z,t in itertools.product(S,Z,T))
-m.addConstrs(taking_S[s,z,t] <= service_capacity[0]*freq_S[s,t] for s,z,t in itertools.product(S,Z,T))
+#m.addConstrs(taking_S[s,z,t] <= intend_SS[s,z,t] for s,z,t in itertools.product(S,Z,T))
+#m.addConstrs(taking_S[s,z,t] <= service_capacity[0]*freq_S[s,t] for s,z,t in itertools.product(S,Z,T))
 
 # Spill
 m.addConstrs(spilled_I[i,z,t] == service_capacity[0]*freq_I[i,t]-taking_I[i,z,t] for i,z,t in itertools.product(I,Z,T))
@@ -248,21 +233,15 @@ m.optimize()
 
 
 # #Print
-# z = 0
-# t = 0
-# for i in I:
-#     print("%s: %s" %(i,freq_I[i,t].x))
+z = 0
+t = 0
+
 
 print()
 for s in S:
-    print("Service %s%s frequency is %s" %(s,Services[s],freq_S[s,t].x))
+    print("Service %s%s frequency is %s" %(s,Services[s],abs(freq_S[s,t].x)))
 
 
-
-
-    
-    
-    
     
     
     
